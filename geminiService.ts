@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { TestConfig, Question, MathTest, QuestionType } from "./types";
 
@@ -17,7 +16,7 @@ export async function generateMathTest(config: TestConfig): Promise<MathTest> {
   3. Trả về đúng định dạng JSON yêu cầu.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3-pro-preview',
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -41,7 +40,10 @@ export async function generateMathTest(config: TestConfig): Promise<MathTest> {
                   items: { type: Type.STRING },
                   description: "Only for Multiple Choice questions"
                 },
-                correctAnswer: { type: Type.STRING },
+                correctAnswer: { 
+                  type: Type.STRING,
+                  description: "For Multiple Choice: Just the letter (e.g., 'A'). For others: The exact answer."
+                },
                 explanation: { type: Type.STRING }
               },
               required: ["id", "type", "content", "correctAnswer"]

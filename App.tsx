@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Printer, Plus, RefreshCcw, CheckCircle2, XCircle, Award, Layout, Edit3, Trophy, Sparkles, BrainCircuit, GraduationCap, ChevronRight } from 'lucide-react';
 import { TestConfig, MathTest, Difficulty, QuestionType } from './types';
@@ -68,6 +67,7 @@ const App: React.FC = () => {
   const [isGraded, setIsGraded] = useState(false);
   const [score, setScore] = useState(0);
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [results, setResults] = useState<Record<string, boolean>>({});
 
   // Reset state when new test is generated
   useEffect(() => {
@@ -77,6 +77,7 @@ const App: React.FC = () => {
       setScore(0);
       setShowAnswers(false);
       setFeedbackMessage("");
+      setResults({});
     }
   }, [test]);
 
@@ -119,6 +120,7 @@ const App: React.FC = () => {
   const handleGrade = () => {
     if (!test) return;
     let correctCount = 0;
+    const newResults: Record<string, boolean> = {};
     
     test.questions.forEach(q => {
       const userVal = (userAnswers[q.id] || "").trim(); // Keep original case for letter check
@@ -193,10 +195,12 @@ const App: React.FC = () => {
       }
       
       if (isCorrect) correctCount++;
+      newResults[q.id] = isCorrect;
     });
     
     const calculatedScore = (correctCount / test.questions.length) * 10;
     setScore(calculatedScore);
+    setResults(newResults);
     
     // Set feedback message based on score
     if (calculatedScore >= 10) {
@@ -509,7 +513,8 @@ const App: React.FC = () => {
                 {/* Questions List */}
                 <div className="space-y-10 print:space-y-6">
                   {test.questions.map((q, idx) => {
-                    const isCorrect = isGraded && (userAnswers[q.id] || "").trim().toLowerCase() === q.correctAnswer.trim().toLowerCase();
+                    // Use results state for correctness check to ensure consistency with grading logic
+                    const isCorrect = isGraded && results[q.id];
                     
                     return (
                       <div key={q.id} className="relative group break-inside-avoid">
