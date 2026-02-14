@@ -28,6 +28,10 @@
         }
         
         @media print {
+            @page {
+                size: A4;
+                margin: 15mm;
+            }
             .no-print {
                 display: none !important;
             }
@@ -37,17 +41,37 @@
             body {
                 background-color: white !important;
                 color: black !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            #root {
+                width: 100%;
             }
             .paper {
                 box-shadow: none !important;
                 border: none !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                background: white !important;
+                width: 100% !important;
+                max-width: none !important;
             }
-            /* Reset colors for printing to save ink */
+            /* Reset colors for printing to save ink, but keep structure clear */
             .text-teal-700, .text-teal-600 {
-                color: black !important;
+                color: #000 !important;
+            }
+            
+            /* Ensure inputs look like lines on paper */
+            input[type="text"] {
+                border: none !important;
+                border-bottom: 1px dotted #000 !important;
+                background: transparent !important;
+                padding: 0 !important;
+                margin-top: 5px;
+            }
+            
+            /* Hide placeholders in print */
+            input::placeholder {
+                color: transparent;
             }
         }
     </style>

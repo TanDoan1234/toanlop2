@@ -16,6 +16,43 @@ const TOPICS = [
   "Giải toán có lời văn"
 ];
 
+const FEEDBACK_MESSAGES = {
+  perfect: [ // Score 10
+    "Xuất sắc! Không sai câu nào cả, em thật thông minh! 🌟",
+    "Điểm 10 tròn trĩnh! Em là thiên tài toán học tương lai đó! 🚀",
+    "Quá đỉnh! Bố mẹ sẽ rất tự hào về sự chăm chỉ của em! 💯",
+    "Tuyệt đối! Em đã nắm vững kiến thức một cách hoàn hảo! 🏆"
+  ],
+  excellent: [ // Score 8 - 9.9
+    "Giỏi lắm! Em chỉ thiếu chút xíu nữa là đạt điểm tuyệt đối rồi! 💪",
+    "Rất đáng khen! Em làm bài rất cẩn thận và chắc chắn! 🌈",
+    "Tuyệt vời! Kiến thức của em rất tốt, hãy phát huy nhé! 🌻",
+    "Điểm cao lắm! Cố gắng thêm một chút để lần sau được 10 nhé! ✨"
+  ],
+  good: [ // Score 5 - 7.9
+    "Khá lắm! Em đang tiến bộ từng ngày, tiếp tục cố gắng nhé! 🌱",
+    "Làm tốt lắm! Hãy xem lại những câu sai để rút kinh nghiệm nha! 📝",
+    "Kết quả khả quan! Cố gắng ôn tập thêm một chút là sẽ điểm cao ngay! 📚",
+    "Em đã hiểu bài rồi đó! Cẩn thận hơn chút nữa là tuyệt vời! 🍀"
+  ],
+  needsImprovement: [ // Score < 5
+    "Đừng buồn nhé! Cố gắng ôn tập thêm là sẽ giỏi thôi mà! ❤️",
+    "Sai sót là chuyện bình thường, quan trọng là em học được gì từ đó! 🤗",
+    "Cần cố gắng hơn chút nữa nha! Hãy xem kỹ lại lời giải chi tiết nhé! 🔍",
+    "Không sao đâu! Làm lại lần nữa chắc chắn em sẽ làm tốt hơn! 💪"
+  ]
+};
+
+// Helper to clean text for comparison (remove punctuation at end, lowercase, trim)
+const normalizeText = (text: string) => {
+  return text.toLowerCase().replace(/[.,;!]+$/, '').trim();
+};
+
+// Helper to extract numbers from text for numeric comparison
+const extractNumbers = (text: string) => {
+  return text.match(/\d+/g) || [];
+};
+
 const App: React.FC = () => {
   const [config, setConfig] = useState<TestConfig>({
     topics: [TOPICS[0]],
@@ -30,6 +67,7 @@ const App: React.FC = () => {
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [isGraded, setIsGraded] = useState(false);
   const [score, setScore] = useState(0);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
 
   // Reset state when new test is generated
   useEffect(() => {
@@ -38,6 +76,7 @@ const App: React.FC = () => {
       setIsGraded(false);
       setScore(0);
       setShowAnswers(false);
+      setFeedbackMessage("");
     }
   }, [test]);
 
@@ -73,21 +112,103 @@ const App: React.FC = () => {
     setUserAnswers(prev => ({ ...prev, [id]: value }));
   };
 
+  const getRandomMessage = (messages: string[]) => {
+    return messages[Math.floor(Math.random() * messages.length)];
+  };
+
   const handleGrade = () => {
     if (!test) return;
     let correctCount = 0;
+    
     test.questions.forEach(q => {
-      const userAns = (userAnswers[q.id] || "").trim().toLowerCase();
-      const correctAns = q.correctAnswer.trim().toLowerCase();
+      const userVal = (userAnswers[q.id] || "").trim(); // Keep original case for letter check
+      const userValLower = userVal.toLowerCase();
+      const correctVal = q.correctAnswer.trim();
+      const correctValLower = correctVal.toLowerCase();
       
-      // Basic check: direct match or if it contains the answer for word problems
-      if (userAns === correctAns || (q.type === QuestionType.MULTIPLE_CHOICE && userAns.includes(correctAns[0]))) {
-        correctCount++;
+      let isCorrect = false;
+
+      if (q.type === QuestionType.MULTIPLE_CHOICE && q.options) {
+        // 1. Check if userVal (e.g. "A") matches the start of correctVal (e.g. "A. 50" or "A")
+        if (correctValLower.startsWith(userValLower + ".") || 
+            correctValLower.startsWith(userValLower + ")") ||
+            correctValLower === userValLower) {
+          isCorrect = true;
+        } 
+        
+        // 2. Check content match (Smart Grading)
+        if (!isCorrect) {
+           const userIdx = userValLower.charCodeAt(0) - 97; // 'a' -> 0
+           if (userIdx >= 0 && userIdx < q.options.length) {
+             let selectedOpt = q.options[userIdx];
+             
+             // Remove "A. ", "B. " prefix from option text if present (e.g. "A. 50" -> "50")
+             selectedOpt = selectedOpt.replace(/^[A-D][\.\)]\s*/i, "").trim();
+             
+             // Remove "A. ", "B. " prefix from correct answer if present
+             let cleanCorrect = correctVal.replace(/^[A-D][\.\)]\s*/i, "").trim();
+
+             // Normalize for text comparison (lowercase, remove punctuation)
+             const normSelected = normalizeText(selectedOpt);
+             const normCorrect = normalizeText(cleanCorrect);
+
+             if (normSelected === normCorrect) {
+               isCorrect = true;
+             } 
+             // Numeric comparison (very effective for Math, compares [405] vs [405])
+             else {
+               const numSelected = extractNumbers(normSelected);
+               const numCorrect = extractNumbers(normCorrect);
+               if (numSelected.length > 0 && numCorrect.length > 0) {
+                 // Check if numbers match exactly (ignoring unit text like 'quả', 'cm')
+                 if (JSON.stringify(numSelected) === JSON.stringify(numCorrect)) {
+                   isCorrect = true;
+                 }
+               }
+               // Fallback inclusion check (e.g. "63" inside "số 63")
+               else if (normSelected.includes(normCorrect) || normCorrect.includes(normSelected)) {
+                   isCorrect = true;
+               }
+             }
+           }
+        }
+      } else {
+         // Logic for text inputs (Calculation, Word problems)
+         const normUser = normalizeText(userVal);
+         const normCorrect = normalizeText(correctVal);
+         
+         if (normUser === normCorrect) isCorrect = true;
+         else {
+             // Numeric check for text inputs
+             const numUser = extractNumbers(normUser);
+             const numCorrect = extractNumbers(normCorrect);
+             if (numUser.length > 0 && numUser.join('') === numCorrect.join('')) {
+                 isCorrect = true;
+             }
+             // Inclusion fallback
+             else if (normCorrect.includes(normUser) || normUser.includes(normCorrect)) {
+                 isCorrect = true;
+             }
+         }
       }
+      
+      if (isCorrect) correctCount++;
     });
     
     const calculatedScore = (correctCount / test.questions.length) * 10;
     setScore(calculatedScore);
+    
+    // Set feedback message based on score
+    if (calculatedScore >= 10) {
+      setFeedbackMessage(getRandomMessage(FEEDBACK_MESSAGES.perfect));
+    } else if (calculatedScore >= 8) {
+      setFeedbackMessage(getRandomMessage(FEEDBACK_MESSAGES.excellent));
+    } else if (calculatedScore >= 5) {
+      setFeedbackMessage(getRandomMessage(FEEDBACK_MESSAGES.good));
+    } else {
+      setFeedbackMessage(getRandomMessage(FEEDBACK_MESSAGES.needsImprovement));
+    }
+
     setIsGraded(true);
     setShowAnswers(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -98,9 +219,9 @@ const App: React.FC = () => {
   };
 
   const getRank = (s: number) => {
-    if (s >= 9) return { label: "Xuất Sắc", color: "text-amber-500", bg: "bg-amber-100", border: "border-amber-200", icon: Trophy };
-    if (s >= 8) return { label: "Giỏi", color: "text-teal-500", bg: "bg-teal-100", border: "border-teal-200", icon: Award };
-    if (s >= 5) return { label: "Khá", color: "text-blue-500", bg: "bg-blue-100", border: "border-blue-200", icon: CheckCircle2 };
+    if (s >= 9) return { label: "Xuất Sắc", color: "text-emerald-600", bg: "bg-emerald-100", border: "border-emerald-200", icon: Trophy };
+    if (s >= 8) return { label: "Giỏi", color: "text-teal-600", bg: "bg-teal-100", border: "border-teal-200", icon: Award };
+    if (s >= 5) return { label: "Khá", color: "text-blue-600", bg: "bg-blue-100", border: "border-blue-200", icon: CheckCircle2 };
     return { label: "Cần Cố Gắng", color: "text-rose-500", bg: "bg-rose-100", border: "border-rose-200", icon: Edit3 };
   };
 
@@ -137,7 +258,7 @@ const App: React.FC = () => {
               <div className="w-px h-6 bg-white/20"></div>
               <button 
                 onClick={handlePrint}
-                className="flex items-center gap-2 text-white hover:bg-white/20 px-4 py-2.5 rounded-lg transition-all text-sm font-bold"
+                className="flex items-center gap-2 text-white hover:bg-white/20 px-4 py-2.5 rounded-lg transition-all text-sm font-bold active:scale-95"
               >
                 <Printer className="w-4 h-4" />
                 In Đề
@@ -147,7 +268,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8 print:block print:w-full print:max-w-none print:mt-0 print:px-0">
         
         {/* Sidebar Configuration Panel */}
         <section className="lg:col-span-4 xl:col-span-3 no-print">
@@ -251,46 +372,61 @@ const App: React.FC = () => {
         </section>
 
         {/* Content Area */}
-        <section className="lg:col-span-8 xl:col-span-9">
+        <section className="lg:col-span-8 xl:col-span-9 print:w-full print:col-span-12">
           
-          {/* Result Card */}
+          {/* Result Card - Fixed Layout */}
           {isGraded && test && (
-            <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl shadow-teal-900/5 border border-teal-100 mb-8 flex flex-col md:flex-row items-center justify-between gap-8 no-print animate-in fade-in slide-in-from-top-4 duration-700">
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <div className="relative w-32 h-32 flex items-center justify-center">
+            <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-xl shadow-teal-900/5 border border-teal-50 mb-8 flex flex-col lg:flex-row items-center justify-between gap-8 no-print animate-in fade-in slide-in-from-top-4 duration-700">
+              {/* Left Group: Score Circle + Text */}
+              <div className="flex flex-col md:flex-row items-center gap-8 md:gap-10 flex-1 w-full lg:w-auto">
+                {/* Score Circle - Fixed Perfect Circle */}
+                <div className="relative w-40 h-40 shrink-0 flex items-center justify-center">
                    {/* Background Circle */}
-                   <svg className="w-full h-full -rotate-90 drop-shadow-lg">
-                      <circle cx="64" cy="64" r="56" fill="white" stroke="#f0fdfa" strokeWidth="12" />
-                      <circle cx="64" cy="64" r="56" fill="transparent" stroke="#0d9488" strokeWidth="12" 
-                              strokeDasharray={351.8} strokeDashoffset={351.8 - (351.8 * score / 10)} 
+                   <svg className="w-full h-full -rotate-90 overflow-visible" viewBox="0 0 160 160">
+                      <defs>
+                        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#000000" floodOpacity="0.08" />
+                        </filter>
+                      </defs>
+                      <circle cx="80" cy="80" r="70" fill="white" stroke="#f0fdfa" strokeWidth="12" filter="url(#shadow)" />
+                      <circle cx="80" cy="80" r="70" fill="transparent" stroke={score >= 5 ? "#0d9488" : "#f43f5e"} strokeWidth="12" 
+                              strokeDasharray={440} strokeDashoffset={440 - (440 * score / 10)} 
                               strokeLinecap="round" className="transition-all duration-1000 ease-out" />
                    </svg>
-                   <div className="absolute flex flex-col items-center">
-                      <span className="text-4xl font-black text-teal-700 tracking-tighter">{score.toFixed(1)}</span>
-                      <span className="text-xs font-bold text-teal-400 uppercase">Điểm</span>
+                   <div className="absolute flex flex-col items-center justify-center inset-0 z-10">
+                      <span className={`text-4xl font-black tracking-tighter ${score >= 5 ? 'text-teal-700' : 'text-rose-600'}`}>
+                        {score.toFixed(1)}
+                      </span>
+                      <span className="text-xs font-bold text-stone-400 uppercase mt-1">Điểm</span>
                    </div>
                 </div>
-                <div className="text-center md:text-left">
-                  <h3 className="text-2xl font-black text-stone-800 mb-2">Kết quả bài làm</h3>
-                  <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border-2 ${RankInfo.bg} ${RankInfo.color} ${RankInfo.border}`}>
-                    <RankInfo.icon className="w-5 h-5" />
-                    <span className="font-bold uppercase text-sm">{RankInfo.label}</span>
+
+                {/* Text Info */}
+                <div className="text-center md:text-left space-y-3 max-w-md">
+                  <h3 className="text-2xl font-black text-stone-800">Kết quả bài làm</h3>
+                  <div>
+                    <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border ${RankInfo.bg} ${RankInfo.color} ${RankInfo.border} font-bold text-sm uppercase`}>
+                      <RankInfo.icon className="w-4 h-4" />
+                      {RankInfo.label}
+                    </span>
                   </div>
-                  <p className="mt-3 text-stone-500 text-sm max-w-xs">
-                    {score >= 8 ? "Tuyệt vời! Em đã nắm vững kiến thức rất tốt." : "Hãy xem lại đáp án chi tiết để rút kinh nghiệm cho lần sau nhé!"}
+                  <p className="text-stone-500 text-sm leading-relaxed font-medium">
+                    {feedbackMessage}
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col w-full md:w-auto gap-3">
+
+              {/* Right Group: Buttons - Fixed Width */}
+              <div className="flex flex-col w-full sm:w-auto sm:min-w-[180px] gap-3 shrink-0">
                 <button 
                   onClick={handleGenerate} 
-                  className="w-full md:w-auto px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-lg shadow-teal-200 font-bold transition-all flex items-center justify-center gap-2"
+                  className="w-full px-6 py-3.5 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white rounded-xl shadow-lg shadow-teal-200 font-bold transition-all flex items-center justify-center gap-2"
                 >
-                  <Plus className="w-4 h-4" /> Đề Mới
+                  <Plus className="w-5 h-5" /> Đề Mới
                 </button>
                 <button 
                   onClick={() => setIsGraded(false)} 
-                  className="w-full md:w-auto px-6 py-3 bg-white hover:bg-stone-50 border-2 border-stone-200 text-stone-600 rounded-xl font-bold transition-all"
+                  className="w-full px-6 py-3.5 bg-white hover:bg-stone-50 active:scale-95 border-2 border-stone-200 text-stone-600 rounded-xl font-bold transition-all"
                 >
                   Làm Lại
                 </button>
@@ -327,7 +463,7 @@ const App: React.FC = () => {
 
           {/* Exam Paper */}
           {test && (
-            <div className="relative bg-white p-8 md:p-16 rounded-[2px] shadow-2xl paper mb-12 min-h-[800px]">
+            <div className="relative bg-white p-8 md:p-16 rounded-[2px] shadow-2xl paper mb-12 min-h-[800px] print:p-0 print:shadow-none print:mb-0">
               {/* Binder Holes Visual Effect */}
               <div className="absolute left-0 top-0 bottom-0 w-12 bg-stone-100 border-r border-stone-200 hidden md:flex flex-col items-center py-10 gap-16 print:hidden">
                  {[...Array(6)].map((_, i) => (
@@ -335,55 +471,55 @@ const App: React.FC = () => {
                  ))}
               </div>
 
-              <div className="md:pl-8">
+              <div className="md:pl-8 print:pl-0">
                 {/* Exam Header */}
-                <div className="text-center mb-12 pb-8 border-b-2 border-dashed border-stone-200">
-                  <div className="flex justify-between items-start mb-6 text-xs font-bold text-stone-400 uppercase tracking-widest">
+                <div className="text-center mb-12 pb-8 border-b-2 border-dashed border-stone-200 print:mb-6 print:pb-4">
+                  <div className="flex justify-between items-start mb-6 text-xs font-bold text-stone-400 uppercase tracking-widest print:text-black">
                     <span>Trường TH ........................</span>
                     <span>Năm học 2024 - 2025</span>
                   </div>
-                  <h2 className="text-3xl md:text-4xl font-black text-teal-800 uppercase mb-8 tracking-tight leading-tight">{test.title}</h2>
+                  <h2 className="text-3xl md:text-4xl font-black text-teal-800 uppercase mb-8 tracking-tight leading-tight print:text-black">{test.title}</h2>
                   
-                  <div className="bg-stone-50 rounded-2xl p-6 border border-stone-100">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-sm md:text-base font-medium text-stone-600">
+                  <div className="bg-stone-50 rounded-2xl p-6 border border-stone-100 print:bg-white print:border-black print:p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-sm md:text-base font-medium text-stone-600 print:text-black">
                       <div className="text-left space-y-4">
                         <div className="flex items-end gap-2">
                           <span className="shrink-0 font-bold">Họ và tên:</span>
-                          <div className="border-b-2 border-stone-300 border-dashed w-full"></div>
+                          <div className="border-b-2 border-stone-300 border-dashed w-full print:border-black"></div>
                         </div>
                         <div className="flex items-end gap-2">
                           <span className="shrink-0 font-bold">Lớp:</span>
-                          <div className="border-b-2 border-stone-300 border-dashed w-24"></div>
+                          <div className="border-b-2 border-stone-300 border-dashed w-24 print:border-black"></div>
                         </div>
                       </div>
                       <div className="text-left md:text-right space-y-2">
-                        <p className="inline-block bg-teal-100 text-teal-800 px-3 py-1 rounded-lg text-xs font-bold uppercase">{config.difficulty}</p>
-                        <p className="text-stone-500">Thời gian làm bài: <span className="text-stone-800 font-bold">40 phút</span></p>
+                        <p className="inline-block bg-teal-100 text-teal-800 px-3 py-1 rounded-lg text-xs font-bold uppercase print:bg-transparent print:text-black print:border print:border-black">{config.difficulty}</p>
+                        <p className="text-stone-500 print:text-black">Thời gian làm bài: <span className="text-stone-800 font-bold print:text-black">40 phút</span></p>
                       </div>
                     </div>
                     
                     {/* Score Box for Print */}
-                    <div className="mt-6 border-2 border-stone-800 h-24 w-full md:w-1/2 ml-auto hidden print:flex relative">
-                       <span className="absolute top-0 left-0 bg-stone-800 text-white text-xs px-2 py-1 font-bold">Điểm</span>
-                       <span className="absolute bottom-0 right-0 bg-stone-800 text-white text-xs px-2 py-1 font-bold">Lời phê của giáo viên</span>
+                    <div className="mt-6 border-2 border-stone-800 h-24 w-full md:w-1/2 ml-auto hidden print:flex relative print:border-black">
+                       <span className="absolute top-0 left-0 bg-stone-800 text-white text-xs px-2 py-1 font-bold print:bg-black print:text-white">Điểm</span>
+                       <span className="absolute bottom-0 right-0 bg-stone-800 text-white text-xs px-2 py-1 font-bold print:bg-black print:text-white">Lời phê của giáo viên</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Questions List */}
-                <div className="space-y-10">
+                <div className="space-y-10 print:space-y-6">
                   {test.questions.map((q, idx) => {
                     const isCorrect = isGraded && (userAnswers[q.id] || "").trim().toLowerCase() === q.correctAnswer.trim().toLowerCase();
                     
                     return (
-                      <div key={q.id} className="relative group">
-                        {/* Status Line on Left */}
-                        <div className={`absolute -left-4 md:-left-8 top-0 bottom-0 w-1 rounded-full transition-colors ${isGraded ? (isCorrect ? 'bg-teal-400' : 'bg-rose-400') : 'bg-transparent'}`}></div>
+                      <div key={q.id} className="relative group break-inside-avoid">
+                        {/* Status Line on Left - Hide in print */}
+                        <div className={`absolute -left-4 md:-left-8 top-0 bottom-0 w-1 rounded-full transition-colors print:hidden ${isGraded ? (isCorrect ? 'bg-teal-400' : 'bg-rose-400') : 'bg-transparent'}`}></div>
 
-                        <div className="flex gap-4 md:gap-6">
+                        <div className="flex gap-4 md:gap-6 print:gap-4">
                           {/* Question Number */}
                           <div className="flex flex-col items-center gap-2">
-                            <span className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-sm transition-colors ${
+                            <span className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-sm transition-colors print:shadow-none print:border print:border-black print:bg-transparent print:text-black ${
                               isGraded 
                                 ? (isCorrect ? 'bg-teal-500 text-white' : 'bg-rose-500 text-white') 
                                 : 'bg-stone-100 text-stone-500 group-hover:bg-teal-500 group-hover:text-white'
@@ -394,13 +530,13 @@ const App: React.FC = () => {
 
                           <div className="flex-1 pt-1">
                             {/* Question Content */}
-                            <p className="text-stone-800 text-xl md:text-2xl font-bold mb-6 leading-normal tracking-tight">
+                            <p className="text-stone-800 text-xl md:text-2xl font-bold mb-6 leading-normal tracking-tight print:text-black print:text-lg print:mb-2">
                               {q.content}
                             </p>
                             
                             {/* MCQ Interaction */}
                             {q.type === QuestionType.MULTIPLE_CHOICE && q.options && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 print:block print:space-y-2">
                                 {q.options.map((opt, oIdx) => {
                                   const char = String.fromCharCode(65 + oIdx);
                                   const isSelected = userAnswers[q.id] === char;
@@ -418,14 +554,14 @@ const App: React.FC = () => {
                                       key={oIdx}
                                       disabled={isGraded}
                                       onClick={() => handleInputChange(q.id, char)}
-                                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left group/btn ${stateStyle}`}
+                                      className={`relative flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left group/btn print:border-none print:p-0 print:bg-transparent print:shadow-none ${stateStyle}`}
                                     >
-                                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shrink-0 transition-colors ${
+                                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shrink-0 transition-colors print:border print:border-black print:rounded-full print:w-6 print:h-6 print:text-xs print:bg-transparent print:text-black ${
                                         isSelected || (isGraded && char === q.correctAnswer[0]) ? 'bg-white text-teal-700 shadow-sm' : 'bg-stone-100 text-stone-400'
                                       }`}>
                                         {char}
                                       </span>
-                                      <span className="font-semibold text-lg">{opt}</span>
+                                      <span className="font-semibold text-lg print:text-base print:text-black">{opt}</span>
                                     </button>
                                   );
                                 })}
@@ -434,9 +570,9 @@ const App: React.FC = () => {
 
                             {/* Text/Number Interaction */}
                             {(q.type === QuestionType.CALCULATION || q.type === QuestionType.FILL_IN_THE_BLANK || q.type === QuestionType.WORD_PROBLEM) && (
-                              <div className="mt-4 max-w-lg">
+                              <div className="mt-4 max-w-lg print:max-w-none print:mt-1">
                                 <div className="relative">
-                                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none print:hidden">
                                     <Edit3 className="h-5 w-5 text-stone-300" />
                                   </div>
                                   <input 
@@ -445,7 +581,7 @@ const App: React.FC = () => {
                                     value={userAnswers[q.id] || ""}
                                     onChange={(e) => handleInputChange(q.id, e.target.value)}
                                     placeholder="Nhập câu trả lời của em..."
-                                    className={`w-full pl-12 pr-4 py-4 rounded-2xl border-2 outline-none transition-all text-xl font-bold shadow-sm ${
+                                    className={`w-full pl-12 pr-4 py-4 rounded-2xl border-2 outline-none transition-all text-xl font-bold shadow-sm print:pl-0 print:border-b-2 print:border-t-0 print:border-x-0 print:border-black print:border-dashed print:rounded-none print:shadow-none print:text-black ${
                                       isGraded 
                                         ? (isCorrect ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-rose-300 bg-rose-50 text-rose-800') 
                                         : 'border-stone-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 bg-white text-stone-700'
@@ -453,7 +589,7 @@ const App: React.FC = () => {
                                   />
                                 </div>
                                 {isGraded && !isCorrect && (
-                                  <div className="mt-3 flex items-center gap-2 text-base font-bold text-teal-600 bg-teal-50 p-3 rounded-xl inline-block border border-teal-100">
+                                  <div className="mt-3 flex items-center gap-2 text-base font-bold text-teal-600 bg-teal-50 p-3 rounded-xl inline-block border border-teal-100 print:hidden">
                                     <CheckCircle2 className="w-5 h-5" />
                                     Đáp án đúng: {q.correctAnswer}
                                   </div>
@@ -461,14 +597,14 @@ const App: React.FC = () => {
                               </div>
                             )}
 
-                            {/* Explanation Box */}
+                            {/* Explanation Box - Only show in print if showAnswers is explicitly on */}
                             {(showAnswers || isGraded) && (
-                              <div className={`mt-6 p-6 rounded-2xl text-base leading-relaxed border-l-4 shadow-sm animate-in fade-in slide-in-from-top-2 ${
+                              <div className={`mt-6 p-6 rounded-2xl text-base leading-relaxed border-l-4 shadow-sm animate-in fade-in slide-in-from-top-2 print:border print:border-black print:bg-transparent print:text-black print:p-4 ${
                                 isCorrect 
                                   ? 'bg-gradient-to-r from-teal-50 to-white border-teal-400 text-stone-700' 
                                   : 'bg-gradient-to-r from-amber-50 to-white border-amber-400 text-stone-700'
                               }`}>
-                                <p className={`font-black flex items-center gap-2 mb-2 uppercase text-xs tracking-wider ${isCorrect ? 'text-teal-600' : 'text-amber-600'}`}>
+                                <p className={`font-black flex items-center gap-2 mb-2 uppercase text-xs tracking-wider print:text-black ${isCorrect ? 'text-teal-600' : 'text-amber-600'}`}>
                                   <BrainCircuit className="w-4 h-4" /> 
                                   {isGraded ? "Giải thích chi tiết" : "Gợi ý làm bài"}
                                 </p>
@@ -500,12 +636,12 @@ const App: React.FC = () => {
                 )}
 
                 {/* Footer */}
-                <div className="mt-24 pt-10 border-t-2 border-stone-100 flex flex-col items-center justify-center text-center opacity-60">
+                <div className="mt-24 pt-10 border-t-2 border-stone-100 flex flex-col items-center justify-center text-center opacity-60 print:mt-8 print:pt-4 print:border-black">
                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="w-5 h-5 text-teal-400" />
-                      <span className="font-bold text-stone-400 uppercase tracking-widest text-xs">AI Education</span>
+                      <Sparkles className="w-5 h-5 text-teal-400 print:text-black" />
+                      <span className="font-bold text-stone-400 uppercase tracking-widest text-xs print:text-black">AI Education</span>
                    </div>
-                   <p className="text-stone-300 text-xs">Được tạo bởi Trí tuệ nhân tạo Gemini</p>
+                   <p className="text-stone-300 text-xs print:text-black">Được tạo bởi Trí tuệ nhân tạo Gemini</p>
                 </div>
               </div>
             </div>
